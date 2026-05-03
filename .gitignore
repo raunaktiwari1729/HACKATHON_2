@@ -1,0 +1,19 @@
+# don't commit the api key — ever
+.env
+
+# sqlite db auto-creates on first run, no need to track it
+backend/judgments.db
+
+# python
+__pycache__/
+*.py[cod]
+backend/venv/
+
+# node
+node_modules/
+frontend/build/
+frontend/.env.local
+
+# os junk
+.DS_Store
+Thumbs.db

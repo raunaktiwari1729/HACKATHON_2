@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pymupdf
+pytesseract
+instructor
+groq
+sqlmodel
+python-dotenv
+python-multipart
