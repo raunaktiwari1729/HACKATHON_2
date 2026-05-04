@@ -188,7 +188,7 @@ def approve(case_id: int, body: ApproveRequest):
         record = get_full_record(case_id)
         if record:
             try:
-                updated_plan = regenerate_action_plan(record.extraction)
+                updated_plan, _ = regenerate_action_plan(record.extraction)
             except Exception as e:
                 logger.warning(f"could not regenerate action plan: {e}")
 

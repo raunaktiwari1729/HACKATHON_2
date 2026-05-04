@@ -202,6 +202,17 @@ function CaseCard({ c, idx }) {
                 Due: {c.primary_deadline}
               </span>
             )}
+            {c.llm_provider && c.llm_provider !== "Unknown" && (
+              <span style={{
+                background: c.llm_provider.includes("Gemini") ? "rgba(66, 133, 244, 0.1)" : "rgba(249, 115, 22, 0.1)", 
+                color: c.llm_provider.includes("Gemini") ? "#60a5fa" : "#fdba74",
+                border: `1px solid ${c.llm_provider.includes("Gemini") ? "rgba(66, 133, 244, 0.3)" : "rgba(249, 115, 22, 0.3)"}`,
+                borderRadius: 8, padding: "5px 10px",
+                fontSize: 11, fontWeight: 700, fontFamily: "'Inter',sans-serif",
+              }}>
+                ⚡ {c.llm_provider}
+              </span>
+            )}
           </div>
         </div>
 

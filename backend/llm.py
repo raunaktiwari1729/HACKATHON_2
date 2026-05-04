@@ -104,7 +104,7 @@ def _call_with_fallback(model_kwargs: dict):
     gemini_error = None
     if _GEMINI_KEY:
         try:
-            return _call_gemini(model_kwargs)
+            return _call_gemini(model_kwargs), "Gemini 2.5 Flash"
         except Exception as e:
             logger.warning(f"Gemini failed: {e}")
             gemini_error = e
@@ -113,7 +113,7 @@ def _call_with_fallback(model_kwargs: dict):
     # 2. Fall back to Groq keys
     for i in range(len(_GROQ_KEYS)):
         try:
-            return _call_groq(model_kwargs, i)
+            return _call_groq(model_kwargs, i), f"Groq Llama-3.3 (Key {i+1})"
         except APIStatusError as e:
             status = getattr(e, "status_code", None)
             err_str = str(e).lower()
@@ -171,8 +171,8 @@ def _truncate_end(text: str, max_chars: int) -> str:
 
 def process_judgment(chunks: DocumentChunks, filename: str) -> VerificationRecord:
     logger.info(f"starting llm processing for: {filename}")
-    extraction  = extract_case_data(chunks)
-    action_plan = generate_action_plan(extraction)
+    extraction, provider1 = extract_case_data(chunks)
+    action_plan, provider2 = generate_action_plan(extraction)
     return VerificationRecord(
         pdf_filename = filename,
         extracted_at = datetime.utcnow(),
@@ -180,10 +180,11 @@ def process_judgment(chunks: DocumentChunks, filename: str) -> VerificationRecor
         action_plan  = action_plan,
         status       = VerificationStatus.PENDING,
         edits_made   = [],
+        llm_provider = provider1,
     )
 
 
-def extract_case_data(chunks: DocumentChunks) -> CaseExtraction:
+def extract_case_data(chunks: DocumentChunks) -> tuple[CaseExtraction, str]:
     identity_text   = _truncate_start(chunks.best_identity_chunk(),   _MAX_IDENTITY_CHARS)
     directions_text = _truncate_end(chunks.best_directions_chunk(), _MAX_DIRECTIONS_CHARS)
     prompt = extraction_prompt(identity_text, directions_text, chunks.used_fallback)
@@ -195,7 +196,7 @@ def extract_case_data(chunks: DocumentChunks) -> CaseExtraction:
     })
 
 
-def generate_action_plan(extraction: CaseExtraction) -> ActionPlan:
+def generate_action_plan(extraction: CaseExtraction) -> tuple[ActionPlan, str]:
     prompt = action_plan_prompt(extraction.model_dump_json(indent=2))
 
     return _call_with_fallback({
@@ -205,7 +206,7 @@ def generate_action_plan(extraction: CaseExtraction) -> ActionPlan:
     })
 
 
-def regenerate_action_plan(extraction: CaseExtraction) -> ActionPlan:
+def regenerate_action_plan(extraction: CaseExtraction) -> tuple[ActionPlan, str]:
     logger.info("reviewer made edits — regenerating action plan to match")
     prompt = regeneration_prompt(extraction.model_dump_json(indent=2))
 

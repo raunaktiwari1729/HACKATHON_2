@@ -44,6 +44,7 @@ class CaseRecord(SQLModel, table=True):
     summary_for_officer:    str           = ""
     appeal_recommended:     bool          = False
     appeal_deadline:        Optional[str] = None
+    llm_provider:           str           = "Unknown"
 
 
 def create_db():
@@ -78,6 +79,7 @@ def save_case(record: VerificationRecord) -> int:
         summary_for_officer    = plan.summary_for_officer,
         appeal_recommended     = plan.appeal_analysis.recommended,
         appeal_deadline        = plan.appeal_analysis.limitation_date,
+        llm_provider           = record.llm_provider,
     )
     with Session(engine) as session:
         session.add(row)
@@ -163,6 +165,7 @@ def get_full_record(case_id) -> Optional[VerificationRecord]:
             reviewed_at    = row.reviewed_at,
             reviewer_notes = row.reviewer_notes,
             edits_made     = edits,
+            llm_provider   = getattr(row, "llm_provider", "Unknown"),
         )
 
 
@@ -193,6 +196,7 @@ def get_dashboard_cases(department=None):
             reviewed_by            = row.reviewed_by,
             reviewed_at            = row.reviewed_at,
             pdf_filename           = row.pdf_filename,
+            llm_provider           = getattr(row, "llm_provider", "Unknown"),
         )
         for row in rows
     ]

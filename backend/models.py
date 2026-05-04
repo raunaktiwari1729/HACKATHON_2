@@ -264,6 +264,9 @@ class VerificationRecord(BaseModel):
     # --- DB identity ---
     id:                Optional[int]      = None
 
+    # --- Metadata ---
+    llm_provider:      str                = "Unknown"
+
 
 # ---------------------------------------------------------------------------
 # Dashboard view — flattened read model for the dashboard UI
@@ -292,3 +295,4 @@ class DashboardCase(BaseModel):
     reviewed_by:         Optional[str]
     reviewed_at:         Optional[datetime]
     pdf_filename:        str
+    llm_provider:        str
