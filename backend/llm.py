@@ -75,6 +75,7 @@ def _call_gemini(model_kwargs: dict):
         response_model=model_kwargs["response_model"],
         max_retries=model_kwargs.get("max_retries", MAX_RETRIES),
         messages=model_kwargs["messages"],
+        temperature=0.0,
     )
 
 
@@ -89,6 +90,7 @@ def _call_groq(model_kwargs: dict, key_index: int):
         response_model=model_kwargs["response_model"],
         max_retries=model_kwargs.get("max_retries", MAX_RETRIES),
         messages=model_kwargs["messages"],
+        temperature=0.0,
     )
 
 
