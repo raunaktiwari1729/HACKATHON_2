@@ -65,7 +65,7 @@ def _call_gemini(model_kwargs: dict):
     logger.info("attempting extraction via Gemini 2.5 Flash")
     client = instructor.from_genai(
         client=genai.Client(api_key=_GEMINI_KEY),
-        mode=instructor.Mode.GEMINI_JSON,
+        mode=instructor.Mode.GENAI_STRUCTURED_OUTPUTS,
     )
     
     # map standard openai kwargs to gemini kwargs
