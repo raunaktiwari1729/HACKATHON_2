@@ -321,7 +321,7 @@ function QueueItem({ item, active, onClick }) {
 // main review panel — this is where human verification happens
 // the whole point: ai extracts data, human checks it, then approves or rejects
 // i split it into a sidebar (queue) + main area (the actual review form)
-export default function ReviewPanel({ initialCaseId, onReviewComplete, onHighlight, onShowPdf, hasPdf }) {
+export default function ReviewPanel({ initialCaseId, onReviewComplete, onHighlight, onShowPdf, onLoadPdf, hasPdf }) {
   const [queue,      setQueue]      = useState([]);
   const [caseId,     setCaseId]     = useState(initialCaseId || null);
   const [caseData,   setCaseData]   = useState(null);
@@ -499,7 +499,25 @@ export default function ReviewPanel({ initialCaseId, onReviewComplete, onHighlig
                 <div style={ps.caseTitle}>{ext?.case_title?.value || "—"}</div>
                 <div style={ps.caseMeta}>{ext?.court_name?.value} · {ext?.date_of_order?.value}</div>
               </div>
-              <UrgencyBadge level={plan?.urgency_level || "MEDIUM"} />
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                <UrgencyBadge level={plan?.urgency_level || "MEDIUM"} />
+                {/* load pdf button — lets reviewer attach the original pdf for any queued case */}
+                {hasPdf ? (
+                  <button onClick={onShowPdf} style={pdfBtnStyle(C.accent)}>
+                    📄 View PDF
+                  </button>
+                ) : (
+                  <label style={pdfBtnStyle(C.txt3)}>
+                    📄 Load PDF
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      style={{ display: "none" }}
+                      onChange={e => onLoadPdf?.(e.target.files?.[0])}
+                    />
+                  </label>
+                )}
+              </div>
             </div>
 
             {/* ── Summary ── */}
@@ -771,8 +789,24 @@ function FlagChip({ label, value, source, pageRef }) {
   );
 }
 
+// ── PDF button style helper ───────────────────────────────────────────────────
+const pdfBtnStyle = (color) => ({
+  display: "flex", alignItems: "center", gap: 5,
+  padding: "5px 12px",
+  background: `${color}15`,
+  border: `1px solid ${color}40`,
+  borderRadius: 6,
+  color,
+  fontSize: 11, fontWeight: 600,
+  cursor: "pointer",
+  fontFamily: "'IBM Plex Mono', monospace",
+  letterSpacing: "0.04em",
+  transition: "all 0.15s",
+});
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 const ps = {
+
   root: {
     // var(--header-h, 90px): uses a CSS variable if the parent sets it, falls back to 90px.
     // this means the layout won't break if the header ever changes height —

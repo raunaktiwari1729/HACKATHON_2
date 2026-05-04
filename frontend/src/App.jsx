@@ -71,6 +71,16 @@ export default function App() {
     setPendingCount(n => n + 1);
   };
 
+  // called when the reviewer manually loads a pdf for an existing queue case
+  // the pdf is never stored on the server — we keep it in browser memory for display only
+  const handleLoadPdf = (file) => {
+    if (!file) return;
+    if (pdfObjectUrl) URL.revokeObjectURL(pdfObjectUrl);
+    setPdfFile(file);
+    setPdfObjectUrl(URL.createObjectURL(file));
+    setShowPdf(true);
+  };
+
   return (
     <div style={s.root}>
       {/* header */}
@@ -135,6 +145,7 @@ export default function App() {
               // renamed param from s→snip to avoid shadowing the styles object below
               onHighlight={(page, snip) => { setHighlightPage(page); setHighlightText(snip); setShowPdf(true); }}
               onShowPdf={() => setShowPdf(true)}
+              onLoadPdf={handleLoadPdf}
               hasPdf={!!pdfObjectUrl}
             />
           )}
