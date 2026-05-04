@@ -75,7 +75,6 @@ def _call_gemini(model_kwargs: dict):
         response_model=model_kwargs["response_model"],
         max_retries=model_kwargs.get("max_retries", MAX_RETRIES),
         messages=model_kwargs["messages"],
-        temperature=0.0,
     )
 
 
