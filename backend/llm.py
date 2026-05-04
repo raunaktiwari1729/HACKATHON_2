@@ -1,12 +1,14 @@
 # llm.py — brain of the app
-# uses groq (free, fast) + instructor (structured json output)
-# supports multiple groq api keys — if one hits a rate limit, it rotates to the next
+# uses gemini (primary, huge context) and groq (fallback) + instructor (structured json output)
+# rotates through available keys automatically if rate limits are hit
 
 import os
 import logging
 from datetime import datetime
 
 import groq
+from google import genai
+from google.genai.errors import APIError
 import instructor
 from groq import APIStatusError
 from dotenv import load_dotenv, find_dotenv
@@ -21,144 +23,134 @@ load_dotenv(find_dotenv())
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# multi-key setup — add as many keys as you have groq accounts
-# reads GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3, ... from env
+# multi-provider setup
+# primary: Gemini 2.5 Flash (250k TPM, 1M context, no looping issues)
+# fallback: Groq (fast, but 12k TPM limit)
 # ---------------------------------------------------------------------------
 
-def _load_api_keys() -> list[str]:
+def _load_groq_keys() -> list[str]:
     keys = []
-    # always check the primary key first
     primary = os.getenv("GROQ_API_KEY")
-    if primary:
-        keys.append(primary)
-    # then check numbered fallbacks: GROQ_API_KEY_2, GROQ_API_KEY_3, ...
+    if primary: keys.append(primary)
     i = 2
     while True:
         key = os.getenv(f"GROQ_API_KEY_{i}")
-        if not key:
-            break
+        if not key: break
         keys.append(key)
         i += 1
     return keys
 
-_API_KEYS = _load_api_keys()
+_GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+_GROQ_KEYS = _load_groq_keys()
 
-if not _API_KEYS:
+if not _GEMINI_KEY and not _GROQ_KEYS:
     raise EnvironmentError(
-        "No GROQ_API_KEY found in environment. "
-        "Set GROQ_API_KEY (and optionally GROQ_API_KEY_2, GROQ_API_KEY_3) in your .env file."
+        "No API keys found. Set GEMINI_API_KEY and/or GROQ_API_KEY in your .env file."
     )
 
-logger.info(f"loaded {len(_API_KEYS)} groq api key(s)")
+logger.info(f"loaded 1 gemini key, {len(_GROQ_KEYS)} groq key(s)")
 
-# current key index — rotates forward on failure
-_current_key_index = 0
+# Gemini has a 1M token context window, so we don't need to truncate aggressively
+# Groq has a 12k limit, but since Gemini is primary, we can use larger chunks.
+# If it falls back to Groq, the prompt might be too large, but that's a known Groq limitation.
+# We'll set the limits to 50,000 chars (approx 12k tokens) which easily fits both.
+_MAX_IDENTITY_CHARS   = 50_000
+_MAX_DIRECTIONS_CHARS = 50_000
 
-
-def _make_client(key: str):
-    """build an instructor-wrapped groq client for a given api key."""
-    gc = groq.Groq(api_key=key)
-    return instructor.from_groq(gc, mode=instructor.Mode.JSON)
-
-
-def _get_client():
-    """return a client using the current active key."""
-    return _make_client(_API_KEYS[_current_key_index])
+MAX_RETRIES = 1
 
 
-def _rotate_key() -> bool:
-    """
-    rotate to the next available api key.
-    returns True if a new key is available, False if all keys are exhausted.
-    """
-    global _current_key_index
-    if _current_key_index + 1 < len(_API_KEYS):
-        _current_key_index += 1
-        logger.warning(f"rotated to groq api key #{_current_key_index + 1}")
-        return True
-    logger.error("all groq api keys exhausted")
-    return False
+def _call_gemini(model_kwargs: dict):
+    """Make a call using Gemini 2.5 Flash via google-genai and instructor"""
+    logger.info("attempting extraction via Gemini 2.5 Flash")
+    client = instructor.from_genai(
+        client=genai.Client(api_key=_GEMINI_KEY),
+        mode=instructor.Mode.GEMINI_JSON,
+    )
+    
+    # map standard openai kwargs to gemini kwargs
+    # response_model and messages are identical in instructor
+    return client.chat.completions.create(
+        model="gemini-2.5-flash",
+        response_model=model_kwargs["response_model"],
+        max_retries=model_kwargs.get("max_retries", MAX_RETRIES),
+        messages=model_kwargs["messages"],
+    )
+
+
+def _call_groq(model_kwargs: dict, key_index: int):
+    """Make a call using Groq"""
+    logger.info(f"attempting extraction via Groq key #{key_index + 1}")
+    gc = groq.Groq(api_key=_GROQ_KEYS[key_index])
+    client = instructor.from_groq(gc, mode=instructor.Mode.JSON)
+    
+    return client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        response_model=model_kwargs["response_model"],
+        max_retries=model_kwargs.get("max_retries", MAX_RETRIES),
+        messages=model_kwargs["messages"],
+    )
 
 
 def _call_with_fallback(model_kwargs: dict):
     """
-    try the groq call with the current key.
-    on rate limit (429) or auth error (401), rotate to next key and retry.
-    on 413 (request too large): fail immediately — all keys have the same token limit,
-      rotating won't help. the fix is smaller input, not a different key.
-    on loop/repetition errors, raise immediately (retrying won't help).
+    try Gemini first (if key exists).
+    on error (rate limit, etc), fall back to Groq keys in order.
     """
-    global _current_key_index
-    # reset to key 0 at the start of each top-level call (fresh attempt)
-    _current_key_index = 0
-
     last_error = None
-    for attempt in range(len(_API_KEYS)):
-        client = _get_client()
+    
+    # 1. Try Gemini
+    if _GEMINI_KEY:
         try:
-            return client.chat.completions.create(**model_kwargs)
+            return _call_gemini(model_kwargs)
+        except Exception as e:
+            logger.warning(f"Gemini failed: {e}")
+            last_error = e
+
+    # 2. Fall back to Groq keys
+    for i in range(len(_GROQ_KEYS)):
+        try:
+            return _call_groq(model_kwargs, i)
         except APIStatusError as e:
             status = getattr(e, "status_code", None)
-
-            # loop/repetition errors — retrying with another key won't help
             err_str = str(e).lower()
+            
+            # looping error - fail immediately
             if "looping content" in err_str or "model output error" in err_str:
-                logger.error(f"groq loop detection (key #{_current_key_index + 1}): {e}")
+                logger.error(f"groq loop detection (key #{i + 1}): {e}")
                 raise RuntimeError(
-                    "The AI flagged this content as repetitive. "
-                    "Try a cleaner digital PDF."
+                    "The AI flagged this content as repetitive. Try a cleaner digital PDF."
                 ) from e
-
-            # 413 = request too large — ALL keys have the same 12k token limit,
-            # rotating to another key will just get the same error. fail fast.
+                
+            # 413 request too large - fail immediately
             if status == 413:
-                logger.error(f"groq 413: request too large ({status}). PDF text needs further trimming.")
+                logger.error(f"groq 413: request too large. PDF text exceeds 12k Groq limit.")
+                # we don't throw immediately if there are more keys, but rotating won't fix 413
                 raise RuntimeError(
-                    "PDF text is too large for the AI model (exceeds 12,000 token limit). "
-                    "Try uploading a shorter PDF or one with fewer pages."
+                    "PDF text is too large for Groq fallback (exceeds 12,000 token limit). "
+                    "Make sure your Gemini API key is active to handle larger PDFs."
                 ) from e
-
-            # rate limit or auth error — try next key
-            if status in (429, 401, 403):
-                logger.warning(
-                    f"groq key #{_current_key_index + 1} failed "
-                    f"(HTTP {status}) — trying next key"
-                )
-                last_error = e
-                if not _rotate_key():
-                    break
-                continue
-
-            # any other error — surface it immediately
-            raise
-
+                
+            logger.warning(f"groq key #{i + 1} failed (HTTP {status}) — trying next key")
+            last_error = e
+            continue
+            
         except Exception as e:
             err_str = str(e).lower()
-            # instructor wraps 413 in its own exception format — catch it here too
             if "413" in str(e) or "request too large" in err_str or "tokens per minute" in err_str:
                 logger.error(f"groq 413 (wrapped by instructor): PDF too large for model.")
                 raise RuntimeError(
-                    "PDF text is too large for the AI model (exceeds 12,000 token limit). "
-                    "Try uploading a shorter PDF or one with fewer pages."
+                    "PDF text is too large for Groq fallback (exceeds 12,000 token limit). "
+                    "Make sure your Gemini API key is active to handle larger PDFs."
                 ) from e
-            logger.error(f"unexpected error on key #{_current_key_index + 1}: {e}")
+                
+            logger.error(f"unexpected error on groq key #{i + 1}: {e}")
             last_error = e
-            if not _rotate_key():
-                break
             continue
 
     raise RuntimeError(
-        f"All {len(_API_KEYS)} Groq API key(s) failed. Last error: {last_error}"
+        f"All AI providers failed. Last error: {last_error}"
     )
-
-
-MAX_RETRIES = 1   # was 2 — instructor was retrying twice on 413, doubling the waste
-
-# groq free tier: 12k tokens per request
-# rough budget: prompt template ≈ 8k tokens, so content budget ≈ 3.5k tokens total
-# keeping these low avoids 413s on large legal PDFs
-_MAX_IDENTITY_CHARS   = 2_000  # was 3500 — case header: number, court, parties
-_MAX_DIRECTIONS_CHARS = 2_000  # was 3500 — court orders near end of doc
 
 
 def _truncate_start(text: str, max_chars: int) -> str:
@@ -195,10 +187,8 @@ def extract_case_data(chunks: DocumentChunks) -> CaseExtraction:
     prompt = extraction_prompt(identity_text, directions_text, chunks.used_fallback)
 
     return _call_with_fallback({
-        "model":          "llama-3.3-70b-versatile",
         "response_model": CaseExtraction,
         "max_retries":    MAX_RETRIES,
-        "max_tokens":     1500,
         "messages":       [{"role": "user", "content": prompt}],
     })
 
@@ -207,10 +197,8 @@ def generate_action_plan(extraction: CaseExtraction) -> ActionPlan:
     prompt = action_plan_prompt(extraction.model_dump_json(indent=2))
 
     return _call_with_fallback({
-        "model":          "llama-3.3-70b-versatile",
         "response_model": ActionPlan,
         "max_retries":    MAX_RETRIES,
-        "max_tokens":     4096,
         "messages":       [{"role": "user", "content": prompt}],
     })
 
@@ -220,9 +208,7 @@ def regenerate_action_plan(extraction: CaseExtraction) -> ActionPlan:
     prompt = regeneration_prompt(extraction.model_dump_json(indent=2))
 
     return _call_with_fallback({
-        "model":          "llama-3.3-70b-versatile",
         "response_model": ActionPlan,
         "max_retries":    MAX_RETRIES,
-        "max_tokens":     4096,
         "messages":       [{"role": "user", "content": prompt}],
     })

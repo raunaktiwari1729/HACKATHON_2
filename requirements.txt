@@ -4,6 +4,7 @@ pymupdf
 pytesseract
 instructor
 groq
+google-genai
 sqlmodel
 python-dotenv
 python-multipart
