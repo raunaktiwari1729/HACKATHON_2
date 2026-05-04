@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // i put every single backend call here so if the base url ever changes, i only update one line
 // never write axios.post(...) directly inside a component — always go through this file
-const BASE_URL = 'http://127.0.0.1:8000';
+const BASE_URL = 'https://hackathon-2-dgif.onrender.com';
 
 // 60s timeout because the llm can take 20-30s on its first call
 const client = axios.create({
