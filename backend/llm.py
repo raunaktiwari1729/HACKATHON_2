@@ -100,11 +100,13 @@ def _call_with_fallback(model_kwargs: dict):
     last_error = None
     
     # 1. Try Gemini
+    gemini_error = None
     if _GEMINI_KEY:
         try:
             return _call_gemini(model_kwargs)
         except Exception as e:
             logger.warning(f"Gemini failed: {e}")
+            gemini_error = e
             last_error = e
 
     # 2. Fall back to Groq keys
@@ -148,9 +150,11 @@ def _call_with_fallback(model_kwargs: dict):
             last_error = e
             continue
 
-    raise RuntimeError(
-        f"All AI providers failed. Last error: {last_error}"
-    )
+    error_msg = f"All AI providers failed. Last Groq error: {last_error}"
+    if gemini_error:
+        error_msg = f"Gemini failed with error: {gemini_error}. Then fallback to Groq failed with: {last_error}"
+        
+    raise RuntimeError(error_msg)
 
 
 def _truncate_start(text: str, max_chars: int) -> str:
