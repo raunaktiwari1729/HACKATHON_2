@@ -84,6 +84,8 @@ def _call_with_fallback(model_kwargs: dict):
     """
     try the groq call with the current key.
     on rate limit (429) or auth error (401), rotate to next key and retry.
+    on 413 (request too large): fail immediately — all keys have the same token limit,
+      rotating won't help. the fix is smaller input, not a different key.
     on loop/repetition errors, raise immediately (retrying won't help).
     """
     global _current_key_index
@@ -107,6 +109,15 @@ def _call_with_fallback(model_kwargs: dict):
                     "Try a cleaner digital PDF."
                 ) from e
 
+            # 413 = request too large — ALL keys have the same 12k token limit,
+            # rotating to another key will just get the same error. fail fast.
+            if status == 413:
+                logger.error(f"groq 413: request too large ({status}). PDF text needs further trimming.")
+                raise RuntimeError(
+                    "PDF text is too large for the AI model (exceeds 12,000 token limit). "
+                    "Try uploading a shorter PDF or one with fewer pages."
+                ) from e
+
             # rate limit or auth error — try next key
             if status in (429, 401, 403):
                 logger.warning(
@@ -122,6 +133,14 @@ def _call_with_fallback(model_kwargs: dict):
             raise
 
         except Exception as e:
+            err_str = str(e).lower()
+            # instructor wraps 413 in its own exception format — catch it here too
+            if "413" in str(e) or "request too large" in err_str or "tokens per minute" in err_str:
+                logger.error(f"groq 413 (wrapped by instructor): PDF too large for model.")
+                raise RuntimeError(
+                    "PDF text is too large for the AI model (exceeds 12,000 token limit). "
+                    "Try uploading a shorter PDF or one with fewer pages."
+                ) from e
             logger.error(f"unexpected error on key #{_current_key_index + 1}: {e}")
             last_error = e
             if not _rotate_key():
@@ -133,10 +152,13 @@ def _call_with_fallback(model_kwargs: dict):
     )
 
 
-MAX_RETRIES = 2
+MAX_RETRIES = 1   # was 2 — instructor was retrying twice on 413, doubling the waste
 
-_MAX_IDENTITY_CHARS   = 3_500
-_MAX_DIRECTIONS_CHARS = 3_500
+# groq free tier: 12k tokens per request
+# rough budget: prompt template ≈ 8k tokens, so content budget ≈ 3.5k tokens total
+# keeping these low avoids 413s on large legal PDFs
+_MAX_IDENTITY_CHARS   = 2_000  # was 3500 — case header: number, court, parties
+_MAX_DIRECTIONS_CHARS = 2_000  # was 3500 — court orders near end of doc
 
 
 def _truncate_start(text: str, max_chars: int) -> str:
