@@ -8,6 +8,7 @@ from datetime import datetime
 
 import groq
 import instructor
+from groq import APIStatusError   # gives us typed access to groq http errors
 from dotenv import load_dotenv, find_dotenv
 
 from models import (
@@ -30,13 +31,14 @@ groq_client = groq.Groq(api_key=GROQ_API_KEY)
 # i'm using mode.json because it saves ~5k tokens vs mode.tools — matters on free tier
 _client = instructor.from_groq(groq_client, mode=instructor.Mode.JSON)
 
-MAX_RETRIES = 3
+MAX_RETRIES = 2   # was 3 — lower so we fail fast instead of compounding loop errors
 
 # groq's free tier is 12k tokens per request — i learned this the hard way
-# the trick: keep the TOP of the doc (case number, court, parties) + the BOTTOM (actual orders)
-# the middle is usually argument summaries we don't need
-_MAX_IDENTITY_CHARS   = 4_000
-_MAX_DIRECTIONS_CHARS = 5_000
+# keeping text budgets tight also reduces the chance of the model entering a
+# looping-repetition pattern (which groq flags as an error and Instructor retries,
+# making the loop worse). shorter input = shorter, more focused output.
+_MAX_IDENTITY_CHARS   = 3_500  # was 4000 — top of doc: case number, court, parties
+_MAX_DIRECTIONS_CHARS = 3_500  # was 5000 — bottom of doc: the actual orders
 
 
 def _truncate_start(text: str, max_chars: int) -> str:
@@ -76,26 +78,47 @@ def extract_case_data(chunks: DocumentChunks) -> CaseExtraction:
     identity_text   = _truncate_start(chunks.best_identity_chunk(),   _MAX_IDENTITY_CHARS)
     directions_text = _truncate_end(chunks.best_directions_chunk(), _MAX_DIRECTIONS_CHARS)
     prompt = extraction_prompt(identity_text, directions_text, chunks.used_fallback)
-    return _client.chat.completions.create(
-        model          = "llama-3.3-70b-versatile",
-        response_model = CaseExtraction,  # instructor enforces this schema
-        max_retries    = MAX_RETRIES,
-        max_tokens     = 2000,
-        messages       = [{"role": "user", "content": prompt}],
-    )
+    try:
+        return _client.chat.completions.create(
+            model          = "llama-3.3-70b-versatile",
+            response_model = CaseExtraction,   # instructor enforces this schema
+            max_retries    = MAX_RETRIES,
+            max_tokens     = 1500,             # was 2000 — shorter forces concise output, less looping
+            messages       = [{"role": "user", "content": prompt}],
+        )
+    except APIStatusError as e:
+        # groq flags repetitive/looping model output with a 400 "model output error".
+        # instructor would normally retry — but retrying the same prompt just loops again.
+        # we catch it here and surface a clear error so main.py can return a 422 to the user.
+        if "looping content" in str(e).lower() or "model output error" in str(e).lower():
+            logger.error(f"groq loop detection on extraction: {e}")
+            raise RuntimeError(
+                "The AI flagged this PDF's text as repetitive (possible scanned/OCR artefact). "
+                "Try uploading a cleaner digital PDF."
+            ) from e
+        raise
 
 
 def generate_action_plan(extraction: CaseExtraction) -> ActionPlan:
     # phase 2 — given what we extracted, tell the officer what to actually DO
     # this is the part that makes the app useful vs just being a search tool
     prompt = action_plan_prompt(extraction.model_dump_json(indent=2))
-    return _client.chat.completions.create(
-        model          = "llama-3.3-70b-versatile",
-        response_model = ActionPlan,
-        max_retries    = MAX_RETRIES,
-        max_tokens     = 4096,
-        messages       = [{"role": "user", "content": prompt}],
-    )
+    try:
+        return _client.chat.completions.create(
+            model          = "llama-3.3-70b-versatile",
+            response_model = ActionPlan,
+            max_retries    = MAX_RETRIES,
+            max_tokens     = 4096,
+            messages       = [{"role": "user", "content": prompt}],
+        )
+    except APIStatusError as e:
+        if "looping content" in str(e).lower() or "model output error" in str(e).lower():
+            logger.error(f"groq loop detection on action plan: {e}")
+            raise RuntimeError(
+                "The AI flagged the action plan output as repetitive. "
+                "Extraction succeeded — try approving the case with the extracted data only."
+            ) from e
+        raise
 
 
 def regenerate_action_plan(extraction: CaseExtraction) -> ActionPlan:

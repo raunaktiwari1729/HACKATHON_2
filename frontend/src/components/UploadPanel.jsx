@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef } from "react";  // useEffect not needed — timers managed via useRef directly
 import { uploadJudgment } from "../api";
 
 // color tokens
@@ -16,7 +16,8 @@ const STATUS = { IDLE:"idle", DRAGGING:"dragging", UPLOADING:"uploading", SUCCES
 const anim = document.createElement("style");
 anim.textContent = `
   @keyframes spin2    { to{transform:rotate(360deg)} }
-  @keyframes progFill { from{width:0%} to{width:85%} }
+  @keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:0.45} }
+  @keyframes progFill { from{width:0%} to{width:90%} }
 `;
 document.head.appendChild(anim);
 
@@ -26,7 +27,9 @@ export default function UploadPanel({ onUploadSuccess }) {
   const [progress, setProgress] = useState("");
   const [result,   setResult]   = useState(null);
   const [error,    setError]    = useState("");
-  const inputRef = useRef(null);
+  const [elapsed,  setElapsed]  = useState(0);  // seconds since upload started — shown live
+  const inputRef   = useRef(null);
+  const elapsedRef = useRef(null);               // holds the elapsed-seconds interval id
 
   // these are the fake progress steps i show while waiting for the api
   // the actual processing is async — i just rotate through these every 4s to keep the user calm
@@ -50,17 +53,25 @@ export default function UploadPanel({ onUploadSuccess }) {
 
   const handleUpload = async () => {
     if (!file) return;
-    setStatus(STATUS.UPLOADING); setError("");
-    // start rotating through the fake progress steps every 4s
-    // Math.min clamps so we don't go past the last step even if the upload is slow
+    setStatus(STATUS.UPLOADING); setError(""); setElapsed(0);
+
+    // rotate through fake progress steps every 4s so the user sees activity
     let step = 0; setProgress(STEPS[0]);
     const iv = setInterval(() => { step = Math.min(step+1, STEPS.length-1); setProgress(STEPS[step]); }, 4000);
+
+    // live elapsed timer — ticks every second so the user can see time passing
+    // this is especially important when Groq hits a rate limit and auto-retries
+    // (adds ~25s of wait). without a timer, 60s of silence looks like a crash.
+    elapsedRef.current = setInterval(() => setElapsed(s => s + 1), 1000);
+
     try {
       const data = await uploadJudgment(file);
-      clearInterval(iv); setResult(data); setStatus(STATUS.SUCCESS);
+      clearInterval(iv);
+      clearInterval(elapsedRef.current);
+      setResult(data); setStatus(STATUS.SUCCESS);
     } catch (err) {
       clearInterval(iv);
-      // show the backend error message if we have one, otherwise a generic hint
+      clearInterval(elapsedRef.current);
       setError(err.response?.data?.detail || "Upload failed. Is the backend running?");
       setStatus(STATUS.ERROR);
     }
@@ -70,7 +81,8 @@ export default function UploadPanel({ onUploadSuccess }) {
   // also clears the file input so the same file can be selected again
   const reset = () => {
     setStatus(STATUS.IDLE); setFile(null); setResult(null);
-    setError(""); setProgress("");
+    setError(""); setProgress(""); setElapsed(0);
+    clearInterval(elapsedRef.current);
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -136,8 +148,28 @@ export default function UploadPanel({ onUploadSuccess }) {
           {status === STATUS.UPLOADING && (
             <div style={st.progBox}>
               <div style={st.spinnerWrap}><div style={st.spinner}/></div>
+
+              {/* current step label — cycles through STEPS every 4s */}
               <div style={st.progText}>{progress}</div>
-              <div style={st.progHint}>AI processing takes 10–30 seconds</div>
+
+              {/* primary hint — always visible */}
+              <div style={st.progHint}>AI processing typically takes 20–60 seconds</div>
+
+              {/* elapsed timer — shows live seconds so judges know it's still running */}
+              <div style={st.elapsedRow}>
+                <span style={st.elapsedDot} />
+                <span style={st.elapsedTxt}>{elapsed}s elapsed</span>
+              </div>
+
+              {/* rate-limit notice — appears after 35s when Groq is likely retrying */}
+              {/* this is the most common cause of long waits on the free tier */}
+              {elapsed >= 35 && (
+                <div style={st.retryNote}>
+                  ⟳ API rate limit retry in progress — Groq is automatically retrying. Please wait.
+                </div>
+              )}
+
+              {/* progress bar animates over 70s — long enough to cover a full Groq retry cycle */}
               <div style={st.progBar}><div style={st.progFill}/></div>
             </div>
           )}
@@ -275,15 +307,44 @@ const st = {
     borderRadius:"50%", animation:"spin2 0.8s linear infinite",
   },
   progText: { fontSize:16, fontWeight:600, color:TXT, marginBottom:6 },
-  progHint: { fontSize:13, color:TXT3, marginBottom:18 },
+  progHint: { fontSize:13, color:TXT3, marginBottom:10 },
+
+  // live elapsed timer row
+  elapsedRow: {
+    display:"inline-flex", alignItems:"center", gap:6,
+    marginBottom:10, fontSize:12,
+    color:"#6b84f8", fontFamily:"'IBM Plex Mono', monospace",
+  },
+  elapsedDot: {
+    width:6, height:6, borderRadius:"50%",
+    background:"#6b84f8",
+    // pulse so it looks alive, not frozen
+    animation:"pulse 1.4s ease-in-out infinite",
+  },
+  elapsedTxt: {},
+
+  // shown after 35s — explains why the upload is taking so long
+  retryNote: {
+    fontSize:12, color:"#f59e0b",
+    background:"rgba(245,158,11,0.08)",
+    border:"1px solid rgba(245,158,11,0.25)",
+    borderRadius:8, padding:"8px 14px",
+    maxWidth:340, margin:"0 auto 16px",
+    lineHeight:1.5,
+    fontFamily:"'IBM Plex Mono', monospace",
+    animation:"fadeIn 0.3s ease",
+  },
+
   progBar: {
     height:3, background:BORDER, borderRadius:4,
-    overflow:"hidden", maxWidth:240, margin:"0 auto",
+    overflow:"hidden", maxWidth:240, margin:"8px auto 0",
   },
   progFill: {
     height:"100%",
     background:`linear-gradient(90deg,${ACCENT},#7c3aed)`,
-    borderRadius:4, animation:"progFill 20s ease forwards",
+    // 70s covers a full Groq free-tier retry cycle (25s wait + processing)
+    // 20s was too short — bar reached 85% and froze, looked like a crash
+    borderRadius:4, animation:"progFill 70s ease forwards",
   },
 
   errBox: {

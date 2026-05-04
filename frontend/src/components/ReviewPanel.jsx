@@ -191,7 +191,10 @@ const fs = {
 };
 
 // ── Direction card ────────────────────────────────────────────────────────────
-function DirectionCard({ dir, index }) {
+// onHighlight is the same callback used by FieldRow — scrolls the pdf viewer
+// to the page and highlights the source sentence. without wiring it here,
+// clicking "view in PDF" inside a directive card is a silent no-op.
+function DirectionCard({ dir, index, onHighlight }) {
   const [showSource, setShowSource] = useState(false);
   return (
     <div style={{
@@ -233,6 +236,7 @@ function DirectionCard({ dir, index }) {
                 pageRef={dir.page_ref || ""}
                 expanded={showSource}
                 onToggle={() => setShowSource(v => !v)}
+                onJump={onHighlight}  // ← wired: clicking "view in PDF" now jumps the viewer
               />
             </div>
           )}
@@ -563,7 +567,8 @@ export default function ReviewPanel({ initialCaseId, onReviewComplete, onHighlig
 
                 <Section title={`Key Directives (${ext?.key_directions?.length || 0})`}>
                   {(ext?.key_directions || []).map((dir, i) => (
-                    <DirectionCard key={i} dir={dir} index={i} />
+                    // pass onHighlight so each directive's "view in PDF" button works
+                    <DirectionCard key={i} dir={dir} index={i} onHighlight={onHighlight} />
                   ))}
                 </Section>
 
@@ -769,7 +774,10 @@ function FlagChip({ label, value, source, pageRef }) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 const ps = {
   root: {
-    display: "flex", height: "calc(100vh - 90px)", overflow: "hidden",
+    // var(--header-h, 90px): uses a CSS variable if the parent sets it, falls back to 90px.
+    // this means the layout won't break if the header ever changes height —
+    // the parent just needs to set --header-h on :root or the container.
+    display: "flex", height: "calc(100vh - var(--header-h, 90px))", overflow: "hidden",
     fontFamily: "'Inter', 'Segoe UI', sans-serif",
     background: C.bg,
   },

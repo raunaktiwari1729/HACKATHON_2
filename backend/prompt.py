@@ -41,6 +41,7 @@ Your task is to extract structured information from a court judgment for governm
 
 CRITICAL RULES:
 1. For EVERY field, provide the exact sentence(s) from the document as source_sentence
+   IMPORTANT: source_sentence must be 1-2 sentences only (max 150 chars). Do NOT copy large blocks.
 2. For page_ref, use the --- PAGE N --- markers in the text. Format: "PAGE 8" or "PAGE 8-9"
 3. confidence: 1.0 = explicitly stated, 0.8 = clearly inferred, 0.6 = uncertain
 4. For computed dates (e.g. "within 2 months of 06.11.2024"):
@@ -54,6 +55,7 @@ CRITICAL RULES:
    Written for a non-lawyer IAS officer reading this at 8am
 7. Extract ALL directives — judgments often have 2-5 separate orders
 8. Extract ALL timelines — both past events and future deadlines
+9. DO NOT REPEAT yourself. Output each value once. No looping, no duplicate sentences.
 {fallback_warning}
 
 === CASE HEADER ===
@@ -66,12 +68,7 @@ CRITICAL RULES:
 
 {directions_text}
 
-Extract every piece of information into the required schema.
-Focus especially on:
-- What exactly did the court ORDER the government to do?
-- By WHEN must it be done?
-- Is there a window to file an APPEAL and when does it close?
-- Which DEPARTMENT is responsible?
+Fill the schema. Be concise. Each field: one clean value, one short source quote, done.
 """
 
 

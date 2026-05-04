@@ -6,7 +6,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional
 from enum import Enum
-from datetime import date, datetime
+from datetime import datetime  # date was imported but never used in any field — removed
 
 
 # ---------------------------------------------------------------------------
@@ -52,11 +52,15 @@ class TracedBool(BaseModel):
 
 class TracedDate(BaseModel):
     """A date value — explicit or inferred — with traceability."""
-    value:            str            = Field(description="ISO date string YYYY-MM-DD or human string")
+    # default="UNKNOWN" is critical — if the LLM can't find the date, Instructor retries
+    # until it exhausts MAX_RETRIES and then raises. with a default here, it can return
+    # a valid object even when the field isn't present in the judgment text.
+    value:            str            = Field(default="UNKNOWN", description="ISO date string YYYY-MM-DD or human string")
     source_sentence:  str
     page_ref:         str
     confidence:       float          = Field(ge=0.0, le=1.0)
     is_inferred:      bool           = Field(
+        default=False,
         description="True if this date was computed (e.g. order_date + 2 months), "
                     "False if explicitly stated in the judgment"
     )
@@ -231,7 +235,10 @@ class FieldEdit(BaseModel):
     field_name:    str
     original:      str
     edited:        str
-    edited_at:     datetime
+    # str not datetime — the frontend sends new Date().toISOString() which Pydantic's
+    # datetime parser chokes on (timezone suffix variations). keeping it as a raw ISO
+    # string avoids a ValidationError crash on every edit-then-approve flow.
+    edited_at:     str
 
 class VerificationRecord(BaseModel):
     """
