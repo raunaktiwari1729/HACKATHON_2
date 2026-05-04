@@ -127,11 +127,9 @@ def _call_with_fallback(model_kwargs: dict):
             # 413 request too large - fail immediately
             if status == 413:
                 logger.error(f"groq 413: request too large. PDF text exceeds 12k Groq limit.")
-                # we don't throw immediately if there are more keys, but rotating won't fix 413
-                raise RuntimeError(
-                    "PDF text is too large for Groq fallback (exceeds 12,000 token limit). "
-                    "Make sure your Gemini API key is active to handle larger PDFs."
-                ) from e
+                msg = "PDF text is too large for Groq fallback (exceeds 12,000 token limit). "
+                if gemini_error: msg += f"Gemini failed to load with error: {gemini_error}"
+                raise RuntimeError(msg) from e
                 
             logger.warning(f"groq key #{i + 1} failed (HTTP {status}) — trying next key")
             last_error = e
@@ -141,10 +139,9 @@ def _call_with_fallback(model_kwargs: dict):
             err_str = str(e).lower()
             if "413" in str(e) or "request too large" in err_str or "tokens per minute" in err_str:
                 logger.error(f"groq 413 (wrapped by instructor): PDF too large for model.")
-                raise RuntimeError(
-                    "PDF text is too large for Groq fallback (exceeds 12,000 token limit). "
-                    "Make sure your Gemini API key is active to handle larger PDFs."
-                ) from e
+                msg = "PDF text is too large for Groq fallback (exceeds 12,000 token limit). "
+                if gemini_error: msg += f"Gemini failed to load with error: {gemini_error}"
+                raise RuntimeError(msg) from e
                 
             logger.error(f"unexpected error on groq key #{i + 1}: {e}")
             last_error = e
