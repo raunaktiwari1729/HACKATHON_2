@@ -9,3 +9,12 @@ services:
         sync: false
       - key: PYTHONUNBUFFERED
         value: "1"
+
+  - type: web
+    name: judgmentai-frontend
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://hackathon-2-dgif.onrender.com

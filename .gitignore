@@ -1,4 +1,4 @@
-# don't commit the api key — ever
+# api key
 .env
 
 # sqlite db auto-creates on first run, no need to track it
