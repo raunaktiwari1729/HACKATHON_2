@@ -3,6 +3,7 @@ uvicorn
 pymupdf
 pytesseract
 instructor
+jsonref
 groq
 google-genai
 sqlmodel
