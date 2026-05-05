@@ -53,9 +53,9 @@ logger.info(f"loaded 1 gemini key, {len(_GROQ_KEYS)} groq key(s)")
 # Gemini has a 1M token context window, so we don't need to truncate aggressively
 # Groq has a 12k limit, but since Gemini is primary, we can use larger chunks.
 # If it falls back to Groq, the prompt might be too large, but that's a known Groq limitation.
-# We'll set the limits to 50,000 chars (approx 12k tokens) which easily fits both.
-_MAX_IDENTITY_CHARS   = 50_000
-_MAX_DIRECTIONS_CHARS = 50_000
+# We'll set the limits to 15,000 chars to ensure it easily fits Groq's 12k token limit.
+_MAX_IDENTITY_CHARS   = 15_000
+_MAX_DIRECTIONS_CHARS = 15_000
 
 MAX_RETRIES = 1
 
