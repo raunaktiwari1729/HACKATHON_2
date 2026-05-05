@@ -23,7 +23,7 @@ We built JudgmentAI so that never happens again.
 ```
 📄 Upload PDF
       ↓
-🤖 AI reads the full judgment (Groq + LLaMA 3.3 70B)
+🤖 AI reads the full judgment (Gemini 2.5 Flash / Groq fallback)
       ↓
 📋 Extracts: case details, court orders, deadlines, parties, appeal windows
       ↓
@@ -58,15 +58,16 @@ No missed deadlines. No confusion. No contempt of court.
 
 - Python 3.11+
 - Node.js 18+
-- A free [Groq API key](https://console.groq.com) (takes 30 seconds to get)
+- A free [Gemini API key](https://aistudio.google.com/apikey) (primary — 1M token context)
+- A free [Groq API key](https://console.groq.com) (fallback — takes 30 seconds to get)
 
 ---
 
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/JudgmentAI.git
-cd JudgmentAI
+git clone https://github.com/raunaktiwari1729/HACKATHON_2.git
+cd HACKATHON_2
 ```
 
 ### 2. Set up the backend
@@ -82,6 +83,7 @@ pip install -r requirements.txt
 Create a `.env` file inside `/backend`:
 
 ```env
+GEMINI_API_KEY=your_gemini_api_key_here
 GROQ_API_KEY=your_groq_api_key_here
 ```
 
@@ -114,7 +116,7 @@ Frontend → `http://localhost:3000`
 JudgmentAI/
 ├── backend/
 │   ├── main.py          # all the api routes live here
-│   ├── llm.py           # groq + instructor magic happens here
+│   ├── llm.py           # gemini (primary) + groq (fallback) + instructor
 │   ├── database.py      # sqlite reads/writes
 │   ├── models.py        # pydantic schemas for every data shape
 │   ├── chunker.py       # splits pdf into smart sections
@@ -150,15 +152,16 @@ JudgmentAI/
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GROQ_API_KEY` | ✅ Yes | get it free at console.groq.com |
+| `GEMINI_API_KEY` | ✅ Yes | primary LLM — get it free at aistudio.google.com/apikey |
+| `GROQ_API_KEY` | ✅ Yes | fallback LLM — get it free at console.groq.com |
 
-That's literally it. One key and you're running.
+Two keys and you're running. Gemini handles the heavy lifting (1M context window), Groq kicks in if Gemini is down.
 
 ---
 
 ## ⚠️ Known Limitations
 
-- Groq's free tier caps at **12,000 tokens per request** — long PDFs get smart-truncated (we keep the case header + court orders, skip the middle filler)
+- Gemini handles full PDFs natively (1M context window), but if it fails and falls back to Groq, the **12,000 token limit** means long PDFs get smart-truncated
 - OCR quality depends on scan quality — blurry PDFs = noisy text = lower AI confidence
 - `days_remaining` is computed at upload time, not updated daily (future feature)
 - No auth system — single user for now (out of hackathon scope)

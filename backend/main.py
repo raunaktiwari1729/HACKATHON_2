@@ -122,7 +122,7 @@ async def upload_judgment(file: UploadFile = File(...)):
         logger.error(f"llm processing failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"AI processing failed: {str(e)}. Check your GROQ_API_KEY.",
+            detail=f"AI processing failed: {str(e)}. Check your GEMINI_API_KEY / GROQ_API_KEY.",
         )
 
     # step 5 — save to db as PENDING (human review required before dashboard)
