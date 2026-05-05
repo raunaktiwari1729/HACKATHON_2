@@ -178,11 +178,7 @@ class CaseExtraction(BaseModel):
     )
 
     # --- Metadata ---
-    responsible_department: Optional[TracedStr] = Field(
-        default=None,
-        description="Which government department/division must act. "
-                    "Infer from context if not explicitly stated."
-    )
+    responsible_department: Optional[str] = None
     subject_matter:    Optional[str]        = Field(
         default=None,
         description="Area of law: 'GST', 'Service matters', 'Land acquisition', 'Public works', etc."
