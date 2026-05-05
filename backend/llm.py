@@ -60,22 +60,43 @@ _MAX_DIRECTIONS_CHARS = 15_000
 MAX_RETRIES = 1
 
 
-def _call_gemini(model_kwargs: dict):
-    """Make a call using Gemini 2.5 Flash via google-genai and instructor"""
-    logger.info("attempting extraction via Gemini 2.5 Flash")
-    client = instructor.from_genai(
-        client=genai.Client(api_key=_GEMINI_KEY),
-        mode=instructor.Mode.GENAI_STRUCTURED_OUTPUTS,
-    )
+# def _call_gemini(model_kwargs: dict):
+#     """Make a call using Gemini 2.5 Flash via google-genai and instructor"""
+#     logger.info("attempting extraction via Gemini 2.5 Flash")
+#     client = instructor.from_genai(
+#         client=genai.Client(api_key=_GEMINI_KEY),
+#         mode=instructor.Mode.GENAI_STRUCTURED_OUTPUTS,
+#     )
     
-    # map standard openai kwargs to gemini kwargs
-    # response_model and messages are identical in instructor
-    return client.chat.completions.create(
-        model="gemini-2.5-flash",
-        response_model=model_kwargs["response_model"],
-        max_retries=model_kwargs.get("max_retries", MAX_RETRIES),
-        messages=model_kwargs["messages"],
-    )
+#     # map standard openai kwargs to gemini kwargs
+#     # response_model and messages are identical in instructor
+#     return client.chat.completions.create(
+#         model="gemini-2.5-flash",
+#         response_model=model_kwargs["response_model"],
+#         max_retries=model_kwargs.get("max_retries", MAX_RETRIES),
+#         messages=model_kwargs["messages"],
+#     )
+def _call_gemini(model_kwargs: dict):
+    import time
+    for attempt in range(3):
+        try:
+            logger.info(f"Gemini attempt {attempt+1}")
+            client = instructor.from_genai(
+                client=genai.Client(api_key=_GEMINI_KEY),
+                mode=instructor.Mode.GENAI_STRUCTURED_OUTPUTS,
+            )
+            return client.chat.completions.create(
+                model="gemini-2.5-flash",
+                response_model=model_kwargs["response_model"],
+                max_retries=model_kwargs.get("max_retries", MAX_RETRIES),
+                messages=model_kwargs["messages"],
+            )
+        except Exception as e:
+            if "503" in str(e) and attempt < 2:
+                logger.warning(f"Gemini 503, retrying in 10s...")
+                time.sleep(10)
+                continue
+            raise
 
 
 def _call_groq(model_kwargs: dict, key_index: int):
