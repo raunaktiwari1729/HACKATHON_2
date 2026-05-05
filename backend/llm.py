@@ -78,6 +78,7 @@ MAX_RETRIES = 1
 #     )
 def _call_gemini(model_kwargs: dict):
     import time
+    last_error = None
     for attempt in range(3):
         try:
             logger.info(f"Gemini attempt {attempt+1}")
@@ -88,16 +89,18 @@ def _call_gemini(model_kwargs: dict):
             return client.chat.completions.create(
                 model="gemini-2.5-flash",
                 response_model=model_kwargs["response_model"],
-                max_retries=model_kwargs.get("max_retries", MAX_RETRIES),
+                max_retries=1,
                 messages=model_kwargs["messages"],
             )
         except Exception as e:
-            if "503" in str(e) and attempt < 2:
-                logger.warning(f"Gemini 503, retrying in 10s...")
-                time.sleep(10)
+            last_error = e
+            err_str = str(e).lower()
+            if any(x in err_str for x in ["503", "unavailable", "high demand", "try again"]):
+                logger.warning(f"Gemini 503 on attempt {attempt+1}, waiting 15s...")
+                time.sleep(15)
                 continue
             raise
-
+    raise last_error
 
 def _call_groq(model_kwargs: dict, key_index: int):
     """Make a call using Groq"""
