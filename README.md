@@ -42,11 +42,11 @@ No missed deadlines. No confusion. No contempt of court.
 
 | Layer | What I Used | Why |
 |-------|------------|-----|
-| **AI / LLM** | Groq API + LLaMA 3.3 70B | fastest free inference, handles legal text well |
+| **AI / LLM** | Gemini 2.5 Flash (primary) + Groq LLaMA 3.3 70B (fallback) | 1M token context window, handles full judgment PDFs without truncation |
 | **Structured Output** | Instructor library | forces the LLM to return valid typed JSON — no regex hacks |
 | **Backend** | FastAPI + Python | clean async API, auto-generates docs at `/docs` |
 | **Database** | SQLite via SQLModel | zero config, works offline, perfect for hackathon scope |
-| **PDF Processing** | pdfplumber + pytesseract | handles both digital and scanned/OCR PDFs |
+| **PDF Processing** | PyMuPDF + pytesseract | handles both digital and scanned/OCR PDFs |
 | **Frontend** | React (CRA) | component-based, state flows clearly |
 | **Styling** | Pure inline CSS | full control, no class name conflicts, ships fast |
 
